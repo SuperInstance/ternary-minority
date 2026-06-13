@@ -1,76 +1,103 @@
 # ternary-minority
 
-**The minority rule: the cellular automaton that refuses to settle.**
+Minority-rule cellular automaton on a 1D ternary ring {-1, 0, +1}. Each cell adopts the *minority* value among itself and its two neighbors, producing self-organizing patterns, oscillators, and domain walls.
 
-Most cellular automata converge. Game of Life finds still lifes. Majority rule converges to consensus. Even Langton's ant settles into a highway.
+## Why It Matters
 
-The minority rule doesn't converge. Ever.
+The minority rule is the inverse of majority-rule voting dynamics. Instead of conforming to neighbors, cells oppose the local majority — a model of anti-conformism, diversification, or competitive exclusion. In ternary systems (three states, not two), the dynamics are far richer than binary variants: the neutral state (0) acts as a mediator that can absorb energy and create stable fixed points impossible in {-1, +1} automata.
 
-The rule is simple: each cell looks at itself and its two neighbors (a 3-cell neighborhood on a ring). It takes the value that is *least common* among the three. If all three are the same, the cell flips to the smallest value. The result is **eternal oscillation** — 62.7% of cells are still flipping at tick 300. The system never finds equilibrium because every equilibrium is immediately unstable: if everyone agrees, everyone disagrees.
+Applications include:
+- **Decentralized consensus**: agents avoid herd behavior
+- **Pattern formation**: spontaneous symmetry breaking
+- **Diversity maintenance**: preventing monoculture in agent populations
+- **Complex systems theory**: studying the transition between order and chaos
 
-This is the mathematical basis of *adversarial resilience*. A system governed by the minority rule cannot be captured by any single state — monoculture is dynamically impossible.
+## How It Works
 
-## What's Inside
+### Update Rule
 
-- **`minority_step(grid, width)`** — one tick of the minority rule on a 1D ring
-- **`run_minority(grid, width, ticks)`** — full simulation, returns `MinorityResult`
-- **`MinorityResult`** — `final_zero_frac`, `oscillating_frac`, `cluster_count`, `energy`
-- **`find_oscillators(grid, width)`** — indices of cells that flip every tick
-- **`domain_walls(grid, width)`** — count boundaries between +1 and -1 regions
-- **`is_stable(grid, width)`** — check if the grid has stopped changing (spoiler: it hasn't)
+For each cell $i$ with neighbors $i-1$ and $i+1$ (periodic boundary), count occurrences:
 
-## Quick Example
+$$c_v = |\{j \in \{i-1, i, i+1\} : x_j = v\}|, \quad v \in \{-1, 0, +1\}$$
+
+The cell updates to the value with minimum count:
+
+$$x_i(t+1) = \arg\min_{v} c_v$$
+
+Ties are broken by selecting the smallest value ($-1 \prec 0 \prec +1$).
+
+### Energy
+
+The Ising-like energy of a configuration:
+
+$$E = \frac{1}{N} \sum_{i=0}^{N-1} |x_i - x_{(i+1) \bmod N}|$$
+
+- $E = 0$: uniform state (all same value)
+- $E = 2$: maximally alternating ($+1, -1, +1, -1, \ldots$)
+
+**Time complexity per step:** O(N) — each cell examined once.  
+**Space complexity:** O(N) — one copy of the grid for double-buffering.
+
+### Oscillators
+
+A cell is an oscillator if $x_i(t) \neq x_i(t+1)$. The oscillating fraction measures dynamic instability:
+
+$$f_{\text{osc}} = \frac{1}{N} \sum_i \mathbf{1}[x_i(t) \neq x_i(t+1)]$$
+
+### Domain Walls
+
+A domain wall exists between positions $i$ and $i+1$ when $|x_i - x_{i+1}| = 2$ (i.e., $+1$ adjacent to $-1$). Domain walls are the topological defects of the ternary ring.
+
+### Cluster Count
+
+Contiguous regions of identical value. For a ring of $N$ cells:
+
+$$C = \sum_{i=0}^{N-1} \mathbf{1}[x_i \neq x_{(i-1) \bmod N}]$$
+
+## Quick Start
 
 ```rust
 use ternary_minority::*;
 
-// Start with a random-ish ternary ring
-let mut grid = vec![0, 1, -1, 0, 1, -1, 0, 1];
-
-// Run 300 ticks
-let result = run_minority(&mut grid, 8, 300);
-
-println!("Fraction oscillating: {:.1}%", result.oscillating_frac * 100.0);
-// ~62.7% — the majority of cells never stop flipping
-
+// Create a ring and evolve it
+let mut grid = vec![1i8, -1, 0, 1, -1, 0, 1, -1, 0, 1];
+let result = run_minority(&mut grid, 10, 100);
+println!("Energy: {:.3}", result.energy);
 println!("Zero fraction: {:.2}", result.final_zero_frac);
-// The 0 state absorbs minority dynamics
+println!("Oscillating: {:.2}%", result.oscillating_frac * 100.0);
 
-// Find the specific cells that oscillate
-let oscillators = find_oscillators(&grid, 8);
-println!("{} cells are still flipping", oscillators.len());
+// Find oscillating cells
+let mut grid2 = vec![0i8, 1, -1, 0, 1, -1];
+let osc = find_oscillators(&mut grid2, 6);
+println!("Oscillators at positions: {:?}", osc);
 
-// Check stability (spoiler: false)
-assert!(!is_stable(&grid, 8));
+// Check stability
+println!("Stable: {}", is_stable(&grid, 10));
 ```
 
-## The Deeper Truth
+## API
 
-**The minority rule is the immune system of ternary dynamics.** It prevents any single state from dominating by *definition* — the rule explicitly opposes the majority. This has a precise mathematical consequence: in a 3-state system, the minority rule creates a *frustrated* lattice. Every local neighborhood wants to be diverse, but satisfying all neighborhoods simultaneously is impossible. The frustration propagates forever.
+| Function | Description |
+|---|---|
+| `minority_step(&mut [i8], usize)` | One CA update step on the ring |
+| `run_minority(&mut [i8], usize, usize) → MinorityResult` | Run N ticks, return final state metrics |
+| `find_oscillators(&[i8], usize) → Vec<usize>` | Indices of cells that flip on next step |
+| `domain_walls(&[i8], usize) → usize` | Count boundaries between +1 and -1 regions |
+| `is_stable(&[i8], usize) → bool` | True if the grid doesn't change in one step |
+| `MinorityResult` | Struct with `final_zero_frac`, `oscillating_frac`, `cluster_count`, `energy` |
 
-The 62.7% oscillation fraction isn't random — it's the steady-state fraction of cells that are *structurally* frustrated. These cells sit at domain boundaries where the neighborhood never resolves. The remaining ~37% are in "trapped" regions where the local neighborhood happens to be stable, but even these can become unstable if neighboring regions shift.
+## Architecture Notes
 
-The domain walls — boundaries between +1 and -1 regions — are the most important structures. They're the active fronts where the minority rule does its work. Walls move, merge, split, and reform, but they never vanish entirely.
+The minority CA connects to the ternary conservation law **γ + η = C** through its energy dynamics. Each ternary value $v \in \{-1, 0, +1\}$ contributes to either the constructive mass γ (for $v = +1$) or the inhibitory mass η (for $v = -1$), while $v = 0$ contributes to neither. The minority rule tends to *maximize* the number of distinct local values, driving the system toward equal representation of all three states. This creates a dynamic equilibrium where $\gamma \approx \eta \approx N/3$, and the neutral population acts as a buffer that absorbs perturbations without violating the conservation bound $C$.
 
-**Use cases:**
-- **Anti-monoculture design** — the minority rule as a constitutional guard against consensus
-- **Adversarial robustness** — systems that resist capture by design
-- **Creative generation** — eternal oscillation as a source of novelty
-- **Neural network regularization** — minority rule as a different kind of dropout
-- **Game theory** — the minority game as a model of financial markets
+Domain walls are the physical manifestation of energy gradients. Their count directly measures $E/2$ in the high-energy regime.
 
-## See Also
+## References
 
-- **ternary-drift** — the opposite: random drift that *causes* monoculture
-- **ternary-consensus** — the consensus mechanisms that minority rule prevents
-- **ternary-life** — another CA with different dynamics (lifecycle, not minority)
-- **ternary-percolation** — how minority-driven patterns percolate through space
-
-## Install
-
-```bash
-cargo add ternary-minority
-```
+- Wolfram, S. (2002). *A New Kind of Science.* Wolfram Media. (Elementary CA theory)
+- Gács, P. (2001). *Deterministic Computations in Cellular Automata.* ECC.
+- Nowak, M. A. (2006). *Evolutionary Dynamics.* Harvard University Press. (Minority games)
+- Arthur, W. B. (1994). *Inductive Reasoning and Bounded Rationality: The El Farol Problem.* AEA Papers.
 
 ## License
 
